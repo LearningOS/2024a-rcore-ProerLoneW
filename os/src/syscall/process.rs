@@ -51,7 +51,37 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
 }
 
 /// YOUR JOB: Finish sys_task_info to pass testcases
-pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
-    trace!("kernel: sys_task_info");
-    -1
+// pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
+//     trace!("kernel: sys_task_info");
+//     -1
+// }
+use crate::task::TASK_MANAGER;
+// use crate::config::CLOCK_FREQ;
+use crate::timer::get_time_ms;
+
+pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
+    if ti.is_null() {
+        return -1;
+    }
+
+    let inner = TASK_MANAGER.inner_exclusive_access();
+    let current_task_id = inner.current_task;
+    let current_task = &inner.tasks[current_task_id];
+
+    // 计算运行时间
+    let run_time = get_time_ms() - current_task.start_time;
+
+    // 获取系统调用计数
+    let syscall_times = current_task.syscall_count.clone();
+
+    // 填充 TaskInfo
+    unsafe {
+        *ti = TaskInfo {
+            status: current_task.task_status,
+            syscall_times,
+            time: run_time,
+        };
+    }
+
+    0
 }

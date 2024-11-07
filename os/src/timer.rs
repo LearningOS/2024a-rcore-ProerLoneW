@@ -4,13 +4,13 @@ use crate::config::CLOCK_FREQ;
 use crate::sbi::set_timer;
 use riscv::register::time;
 /// The number of ticks per second
-const TICKS_PER_SEC: usize = 100;
+pub(crate) const TICKS_PER_SEC: usize = 100;
 #[allow(dead_code)]
 /// The number of milliseconds per second
-const MSEC_PER_SEC: usize = 1000;
+pub(crate) const MSEC_PER_SEC: usize = 1000;
 /// The number of microseconds per second
 #[allow(dead_code)]
-const MICRO_PER_SEC: usize = 1_000_000;
+pub(crate) const MICRO_PER_SEC: usize = 1_000_000;
 
 /// Get the current time in ticks
 pub fn get_time() -> usize {
