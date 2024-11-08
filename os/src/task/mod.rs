@@ -38,15 +38,15 @@ pub struct TaskManager {
     /// total number of tasks
     num_app: usize,
     /// use inner value to get mutable access
-    inner: UPSafeCell<TaskManagerInner>,
+    pub inner: UPSafeCell<TaskManagerInner>,
 }
 
 /// The task manager inner in 'UPSafeCell'
-struct TaskManagerInner {
+pub struct TaskManagerInner {
     /// task list
-    tasks: Vec<TaskControlBlock>,
+    pub tasks: Vec<TaskControlBlock>,
     /// id of current `Running` task
-    current_task: usize,
+    pub current_task: usize,
 }
 
 lazy_static! {
@@ -70,6 +70,8 @@ lazy_static! {
         }
     };
 }
+
+use core::cell::RefMut;
 
 impl TaskManager {
     /// Run the first task in task list.
@@ -159,6 +161,10 @@ impl TaskManager {
         } else {
             panic!("All applications completed!");
         }
+    }
+    /// 获取 inner 的独占访问权
+    pub fn inner_exclusive_access(&self) -> RefMut<'_, TaskManagerInner> {
+        self.inner.exclusive_access()
     }
 }
 
