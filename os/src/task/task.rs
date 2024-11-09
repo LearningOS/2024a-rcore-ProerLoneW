@@ -2,6 +2,7 @@
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 use crate::config::TRAP_CONTEXT_BASE;
+// use crate::logging::init;
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
@@ -35,7 +36,7 @@ impl TaskControlBlock {
         inner.memory_set.token()
     }
 }
-
+use crate::config::MAX_SYSCALL_NUM;
 pub struct TaskControlBlockInner {
     /// The physical page number of the frame where the trap context is placed
     pub trap_cx_ppn: PhysPageNum,
@@ -43,6 +44,21 @@ pub struct TaskControlBlockInner {
     /// Application data can only appear in areas
     /// where the application address space is lower than base_size
     pub base_size: usize,
+    
+    /// again start time
+    pub start_time: usize,
+
+    /// priority
+    pub priority: usize,
+
+    /// priority
+    pub stride: usize,
+
+    /// priority
+    pub pass: usize,
+
+    /// again syscall times
+    pub syscall_times: [u32; MAX_SYSCALL_NUM],
 
     /// Save task context
     pub task_cx: TaskContext,
@@ -69,6 +85,9 @@ pub struct TaskControlBlockInner {
     /// Program break
     pub program_brk: usize,
 }
+
+use crate::config::BIG_STRIDE;
+use crate::config::INIT_PRIORITY;
 
 impl TaskControlBlockInner {
     /// get the trap context
@@ -113,6 +132,11 @@ impl TaskControlBlock {
                     task_cx: TaskContext::goto_trap_return(kernel_stack_top),
                     task_status: TaskStatus::Ready,
                     memory_set,
+                    start_time: 0,
+                    syscall_times: [0; 500],
+                    priority: INIT_PRIORITY,
+                    stride: BIG_STRIDE / INIT_PRIORITY,
+                    pass: 0,
                     parent: None,
                     children: Vec::new(),
                     exit_code: 0,
@@ -186,6 +210,11 @@ impl TaskControlBlock {
                     task_cx: TaskContext::goto_trap_return(kernel_stack_top),
                     task_status: TaskStatus::Ready,
                     memory_set,
+                    start_time: 0,
+                    syscall_times: [0; 500],
+                    priority: INIT_PRIORITY,
+                    stride: BIG_STRIDE / INIT_PRIORITY,
+                    pass: 0,
                     parent: Some(Arc::downgrade(self)),
                     children: Vec::new(),
                     exit_code: 0,

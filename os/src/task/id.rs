@@ -57,6 +57,13 @@ impl Drop for PidHandle {
     }
 }
 
+impl PidHandle {
+    /// get PID
+    pub fn get_id(&self) -> usize {
+        self.0
+    }
+}
+
 /// Allocate a new PID
 pub fn pid_alloc() -> PidHandle {
     PidHandle(PID_ALLOCATOR.exclusive_access().alloc())

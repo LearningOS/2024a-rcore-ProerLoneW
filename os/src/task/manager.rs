@@ -25,6 +25,11 @@ impl TaskManager {
     pub fn fetch(&mut self) -> Option<Arc<TaskControlBlock>> {
         self.ready_queue.pop_front()
     }
+
+    /// 根据 pid 获取对应的任务控制块（TCB）。
+    pub fn get_task_by_pid(&self, pid: usize) -> Option<Arc<TaskControlBlock>> {
+        self.ready_queue.iter().find(|task| task.pid.get_id() == pid).cloned()
+    }
 }
 
 lazy_static! {
