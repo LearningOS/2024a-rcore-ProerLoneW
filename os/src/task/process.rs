@@ -6,8 +6,9 @@ use super::TaskControlBlock;
 use super::{add_task, SignalFlags};
 use super::{pid_alloc, PidHandle};
 use crate::fs::{File, Stdin, Stdout};
-use crate::mm::{translated_refmut, MemorySet, KERNEL_SPACE};
+use crate::mm::{MemorySet, KERNEL_SPACE};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
+use crate::task::current_task;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
@@ -49,6 +50,8 @@ pub struct ProcessControlBlockInner {
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
     /// condvar list
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+    /// deadlock_ckeck
+    pub deadlock_check: bool, 
 }
 
 impl ProcessControlBlockInner {
@@ -81,6 +84,164 @@ impl ProcessControlBlockInner {
     /// get a task with tid in this process
     pub fn get_task(&self, tid: usize) -> Arc<TaskControlBlock> {
         self.tasks[tid].as_ref().unwrap().clone()
+    }
+    /// check mutex
+    pub fn check_mutex(&self, mutex_id: usize) -> bool {
+        trace!("check_mutex");
+        let n_task = self.tasks.len();
+        let n_mutex = self.mutex_list.len();
+        if n_mutex <= 0 {
+            return true;
+        }
+        let mut work = vec![0; n_mutex];
+        let mut need = vec![vec![0; n_mutex]; n_task];
+        let mut allocation = vec![vec![0; n_mutex]; n_task];
+        for i in 0..n_mutex {
+            if let Some(mutex_i) = &self.mutex_list[i] {
+                work[i] = mutex_i.stat();
+                if let Some(allocation_mat) = mutex_i.get_allocation() {
+                    println!("mutex_allocation_mat:{:?}", allocation_mat);
+                    for j in 0..allocation_mat.len() {
+                        allocation[allocation_mat[j]][i] += 1;
+                    }
+                }
+                if let Some(need_mat) = mutex_i.get_need() {
+                    println!("need_mat:{:?}", need_mat);
+                    for j in 0..need_mat.len() {
+                        need[need_mat[j]][i] += 1;
+                    }
+                }
+            }
+        }
+
+        let task = current_task().unwrap();
+        let current_task_inner = task.inner_exclusive_access();
+        let current_task_res = current_task_inner.res.as_ref().unwrap();
+        let tid = current_task_res.tid;
+        need[tid][mutex_id] += 1;
+
+        println!("work:{:?}", work);
+        println!("allocation:{:?}", allocation);
+        println!("need:{:?}", need);
+
+        let mut finish = vec![false; n_task];
+        loop {
+            let mut res_i: isize = -1;
+            for i in 0..n_task {
+                let mut flag = true;
+                for j in 0..n_mutex{
+                    if finish[i] || need[i][j] > work[j] {
+                        flag = false;
+                        break;
+                    }
+                }
+                if flag {
+                    res_i = i as isize;
+                    break;
+                }
+            }
+            if res_i == -1 as isize {
+                break;
+            }
+            for j in 0..n_mutex {
+                work[j] += allocation[res_i as usize][j];
+                finish[res_i as usize] = true;
+            }
+        }
+        println!("finish:{:?}", finish);
+        for i in 0..n_task {
+            if !finish[i] {
+                return true;
+            }
+        }
+        return false;
+    }
+    /// check sem
+    pub fn check_sem(&self, sem_id: usize) -> bool {
+        println!("sem_id: {:?}", sem_id);
+        trace!("check_sem");
+        let n_task = self.tasks.len();
+        let n_sem = self.semaphore_list.len();
+        if n_sem <= 0 {
+            return true;
+        }
+        let mut work = vec![0; n_sem];
+        let mut need = vec![vec![0; n_sem]; n_task];
+        let mut allocation = vec![vec![0; n_sem]; n_task];
+        for i in 0..n_sem {
+            println!("i_index:{:?}", i);
+            if let Some(sem_i) = &self.semaphore_list[i]{
+                work[i] = sem_i.stat();
+                if let Some(allocation_mat) = sem_i.get_allocation() {
+                    println!("allocation_mat:{:?}", allocation_mat);
+                    for j in 0..allocation_mat.len() {
+                        allocation[allocation_mat[j]][i] += 1;
+                    }
+                }
+                if let Some(need_mat) = sem_i.get_need() {
+                    println!("need_mat:{:?}", need_mat);
+                    for j in 0..need_mat.len() {
+                        need[need_mat[j]][i] += 1;
+                    }
+                }
+            }
+        }
+        let task = current_task().unwrap();
+        let current_task_inner = task.inner_exclusive_access();
+        let current_task_res = current_task_inner.res.as_ref().unwrap();
+        let tid = current_task_res.tid;
+        need[tid][sem_id] += 1;
+        println!("tid:{:?}", tid);
+        println!("work:{:?}", work);
+        println!("allocation:{:?}", allocation);
+        println!("need:{:?}", need);
+
+        let mut finish = vec![false; n_task];
+        loop {
+            let mut res_i: isize = -1;
+            for i in 0..n_task {
+                let mut flag = true;
+                for j in 0..n_sem {
+                    if finish[i] || need[i][j] > work[j] {
+                        flag = false;
+                        break;
+                    }
+                }
+                if flag {
+                    res_i = i as isize;
+                    break;
+                }
+            }
+            if res_i == -1 as isize {
+                break;
+            }
+            println!("res_i:{:?}", res_i);
+            for j in 0..n_sem {
+                work[j] += allocation[res_i as usize][j];
+                finish[res_i as usize] = true;
+            }
+        }
+        println!("finish:{:?}", finish);
+        for i in 0..n_task {
+            if !finish[i] {
+                return true;
+            }
+        }
+        return false;
+    }
+    /// deadlock_check
+    pub fn is_deadlock(&self, mutex_id: isize, sem_id: isize) -> bool {
+        trace!("is_dead_lock");
+        let deadlock_check = self.deadlock_check;
+        if deadlock_check {
+            if mutex_id >= 0 as isize {
+                return self.check_mutex(mutex_id as usize);
+            }
+            if sem_id >= 0 as isize {
+                return self.check_sem(sem_id as usize);
+            }
+        }
+        return false;
     }
 }
 
@@ -119,6 +280,7 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    deadlock_check: false,
                 })
             },
         });
@@ -158,7 +320,7 @@ impl ProcessControlBlock {
         // memory_set with elf program headers/trampoline/trap context/user stack
         trace!("kernel: exec .. MemorySet::from_elf");
         let (memory_set, ustack_base, entry_point) = MemorySet::from_elf(elf_data);
-        let new_token = memory_set.token();
+        let _new_token = memory_set.token();
         // substitute memory_set
         trace!("kernel: exec .. substitute memory_set");
         self.inner_exclusive_access().memory_set = memory_set;
@@ -175,25 +337,25 @@ impl ProcessControlBlock {
         let mut user_sp = task_inner.res.as_mut().unwrap().ustack_top();
         user_sp -= (args.len() + 1) * core::mem::size_of::<usize>();
         let argv_base = user_sp;
-        let mut argv: Vec<_> = (0..=args.len())
-            .map(|arg| {
-                translated_refmut(
-                    new_token,
-                    (argv_base + arg * core::mem::size_of::<usize>()) as *mut usize,
-                )
-            })
-            .collect();
-        *argv[args.len()] = 0;
-        for i in 0..args.len() {
-            user_sp -= args[i].len() + 1;
-            *argv[i] = user_sp;
-            let mut p = user_sp;
-            for c in args[i].as_bytes() {
-                *translated_refmut(new_token, p as *mut u8) = *c;
-                p += 1;
-            }
-            *translated_refmut(new_token, p as *mut u8) = 0;
-        }
+        // let mut argv: Vec<_> = (0..=args.len())
+        //     .map(|arg| {
+        //         translated_refmut(
+        //             new_token,
+        //             (argv_base + arg * core::mem::size_of::<usize>()) as *mut usize,
+        //         )
+        //     })
+        //     .collect();
+        // *argv[args.len()] = 0;
+        // for i in 0..args.len() {
+        //     user_sp -= args[i].len() + 1;
+        //     *argv[i] = user_sp;
+        //     let mut p = user_sp;
+        //     for c in args[i].as_bytes() {
+        //         *translated_refmut(new_token, p as *mut u8) = *c;
+        //         p += 1;
+        //     }
+        //     *translated_refmut(new_token, p as *mut u8) = 0;
+        // }
         // make the user_sp aligned to 8B for k210 platform
         user_sp -= user_sp % core::mem::size_of::<usize>();
         // initialize trap_cx
@@ -245,6 +407,7 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    deadlock_check: false,
                 })
             },
         });

@@ -70,6 +70,11 @@ pub fn sys_mutex_lock(mutex_id: usize) -> isize {
     );
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
+    // let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
+    let deadlock = process_inner.is_deadlock(mutex_id as isize, -1 as isize);
+    if deadlock {
+        return -0xDEAD;
+    }
     let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
     drop(process_inner);
     drop(process);
@@ -164,6 +169,11 @@ pub fn sys_semaphore_down(sem_id: usize) -> isize {
     );
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
+    // let sem = Arc::clone(process_inner.semaphore_list[sem_id].as_ref().unwrap());
+    let deadlock = process_inner.is_deadlock(-1 as isize, sem_id as isize);
+    if deadlock {
+        return -0xDEAD;
+    }
     let sem = Arc::clone(process_inner.semaphore_list[sem_id].as_ref().unwrap());
     drop(process_inner);
     sem.down();
@@ -245,7 +255,24 @@ pub fn sys_condvar_wait(condvar_id: usize, mutex_id: usize) -> isize {
 /// enable deadlock detection syscall
 ///
 /// YOUR JOB: Implement deadlock detection, but might not all in this syscall
+// pub fn sys_enable_deadlock_detect(_enabled: usize) -> isize {
+//     trace!("kernel: sys_enable_deadlock_detect NOT IMPLEMENTED");
+//     -1
+// }
+/// enable deadlock detection syscall
 pub fn sys_enable_deadlock_detect(_enabled: usize) -> isize {
     trace!("kernel: sys_enable_deadlock_detect NOT IMPLEMENTED");
-    -1
+    if _enabled == 0 {
+        let process = current_process();
+        let mut process_inner = process.inner_exclusive_access();
+        process_inner.deadlock_check = false;
+        return 0;
+    } else if _enabled == 1 {
+        let process = current_process();
+        let mut process_inner = process.inner_exclusive_access();
+        process_inner.deadlock_check = true;
+        return 1;
+    } else {
+        return -1;
+    }   
 }
