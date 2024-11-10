@@ -85,6 +85,7 @@ pub struct DiskInode {
     pub direct: [u32; INODE_DIRECT_COUNT],
     pub indirect1: u32,
     pub indirect2: u32,
+    pub nlink: u32, 
     type_: DiskInodeType,
 }
 
@@ -96,6 +97,11 @@ impl DiskInode {
         self.direct.iter_mut().for_each(|v| *v = 0);
         self.indirect1 = 0;
         self.indirect2 = 0;
+        // haoba
+        self.nlink = match type_ {
+            DiskInodeType::File => 1,
+            DiskInodeType::Directory => 2, // 根目录可能初始化为 2
+        };
         self.type_ = type_;
     }
     /// Whether this inode is a directory

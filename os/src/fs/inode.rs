@@ -13,6 +13,7 @@ use alloc::vec::Vec;
 use bitflags::*;
 use easy_fs::{EasyFileSystem, Inode};
 use lazy_static::*;
+use crate::fs::{Stat, StatMode};
 
 /// inode in memory
 /// A wrapper around a filesystem inode
@@ -25,7 +26,8 @@ pub struct OSInode {
 /// The OS inode inner in 'UPSafeCell'
 pub struct OSInodeInner {
     offset: usize,
-    inode: Arc<Inode>,
+    /// pub!!!
+    pub inode: Arc<Inode>,
 }
 
 impl OSInode {
@@ -52,9 +54,29 @@ impl OSInode {
         }
         v
     }
+    /// get inode direct
+    pub fn inner_inode(&self) -> Arc<Inode> {
+        Arc::clone(&self.inner.exclusive_access().inode)
+    }
+    /// 获取文件的元数据，包括大小、模式和链接数
+    pub fn fetch_metadata(&self) -> (u64, StatMode, u32) {
+        // 从磁盘 inode 中读取文件的元数据
+        self.inner.exclusive_access().inode.read_disk_inode(|disk_inode| {
+            (
+                disk_inode.size as u64,
+                if disk_inode.is_dir() {
+                    StatMode::DIR
+                } else {
+                    StatMode::FILE
+                },
+                disk_inode.nlink,
+            )
+        })
+    }
 }
 
 lazy_static! {
+    /// pub ref
     pub static ref ROOT_INODE: Arc<Inode> = {
         let efs = EasyFileSystem::open(BLOCK_DEVICE.clone());
         Arc::new(EasyFileSystem::root_inode(&efs))
@@ -154,5 +176,15 @@ impl File for OSInode {
             total_write_size += write_size;
         }
         total_write_size
+    }
+    fn stat(&self) -> Stat {
+        let (_size, mode, nlink) = self.fetch_metadata();
+        Stat {
+            dev: 0, // 填入适当的设备号
+            ino: 0, // 填入适当的inode编号
+            mode,
+            nlink,
+            pad: [0; 7],
+        }
     }
 }

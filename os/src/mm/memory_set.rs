@@ -318,6 +318,38 @@ impl MemorySet {
             false
         }
     }
+    /// check range validation
+    pub fn check_vpn_range(&self, start_vpn: VirtPageNum, end_vpn: VirtPageNum) -> bool {
+        for area in &self.areas {
+            // 如果任一 `MapArea` 的范围与检查范围有重叠，则表示范围内已经有映射
+            if area.vpn_range.get_start() <= end_vpn && area.vpn_range.get_end() > start_vpn {
+                return true;
+            }
+        }
+        false
+    }
+    /// find match for unmap
+    pub fn find_exact_match(&self, start_va: VirtAddr, end_va: VirtAddr) -> Option<&MapArea> {
+        self.areas.iter().find(|area| {
+            area.vpn_range.get_start() == start_va.floor() && area.vpn_range.get_end() == end_va.ceil()
+        })
+    }
+    /// Remove a fully matched mapping area
+    pub fn remove_area(&mut self, start_va: VirtAddr, end_va: VirtAddr) {
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.floor();
+
+        let mut i = 0;
+        while i < self.areas.len() {
+            if self.areas[i].vpn_range.get_start() == start_vpn && self.areas[i].vpn_range.get_end() == end_vpn {
+                // 找到完全匹配的区域，解除映射并从 areas 中移除
+                self.areas[i].unmap(&mut self.page_table);
+                self.areas.remove(i);
+            } else {
+                i += 1;
+            }
+        }
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
